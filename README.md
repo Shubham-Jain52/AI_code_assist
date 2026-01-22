@@ -24,7 +24,12 @@ We built this because copying code into ChatGPT for review is tedious and potent
 ## Quick Start
 You have two options: the "I have Docker" way (recommended) and the "I want to install everything manually" way.
 
-### Option 1: Docker (Fastest)
+### Option 1: Docker (Recommended for Production)
+This runs the full microservices architecture:
+- **API**: Async, non-blocking.
+- **Worker**: Dedicated background processing.
+- **Redis**: Persistent job queue.
+
 1.  Make sure you have Docker installed.
 2.  Build and run:
     ```bash
@@ -43,7 +48,12 @@ You have two options: the "I have Docker" way (recommended) and the "I want to i
     ```
 3.  Go to `http://localhost:8000`.
 
-### Option 2: Local Dev (Manual)
+### Option 2: Serverless / Vercel (Fastest for Demos)
+This runs in "Synchronous Mode" (No Redis, No Worker). Ideal for hosting a quick demo on Vercel's free tier.
+- **API**: Handles analysis directly in the request.
+- **Deploy**: Connect your GitHub repo to Vercel and it just works (config is in `vercel.json`).
+
+### Option 3: Local Dev (Manual)
 If you want to hack on the code:
 
 1.  **Install dependencies**:
