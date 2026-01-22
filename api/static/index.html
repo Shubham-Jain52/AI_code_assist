@@ -449,6 +449,12 @@
                         </div>
                     </div>
 
+                    <div class="result-card" id="suggestions-container"
+                        style="display: none; border-left: 4px solid #ffd700; background: rgba(255, 215, 0, 0.1); padding: 1rem; margin-bottom: 1rem; border-radius: 8px;">
+                        <h3 style="color: #ffd700; margin-bottom: 0.5rem;">💡 AI Suggestions</h3>
+                        <ul id="suggestions-list" class="flags-list" style="list-style: none;"></ul>
+                    </div>
+
                     <div class="issues-list">
                         <h3>Detected Issues</h3>
                         <ul id="flagsList">
@@ -640,6 +646,24 @@
                     li.style.borderLeftColor = '#22c55e';
                     li.textContent = "✨ Clean code! No issues detected.";
                     flagsList.appendChild(li);
+                }
+
+                // Populate Suggestions
+                const suggestionsContainer = document.getElementById('suggestions-container');
+                const suggestionsList = document.getElementById('suggestions-list');
+                suggestionsList.innerHTML = ''; // Clear previous
+
+                if (data.suggestions && data.suggestions.length > 0) {
+                    suggestionsContainer.style.display = 'block';
+                    data.suggestions.forEach(suggestion => {
+                        const li = document.createElement('li');
+                        li.textContent = suggestion;
+                        li.style.marginBottom = '0.5rem';
+                        li.style.color = '#e2e8f0';
+                        suggestionsList.appendChild(li);
+                    });
+                } else {
+                    suggestionsContainer.style.display = 'none';
                 }
             }
 
