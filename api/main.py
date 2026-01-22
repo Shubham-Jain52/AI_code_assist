@@ -56,7 +56,8 @@ async def get_status(submission_id: str):
             risk_score=int(result.get("risk_score", 0)),
             quality_score=int(result.get("quality_score", 0)),
             comments=json.loads(result.get("comments", "[]")),
-            flags=json.loads(result.get("flags", "[]"))
+            flags=json.loads(result.get("flags", "[]")),
+            suggestions=json.loads(result.get("suggestions", "[]"))
         )
             
     return ReviewResult(
@@ -65,5 +66,6 @@ async def get_status(submission_id: str):
         risk_score=0,
         quality_score=0,
         comments=[],
-        flags=[]
+        flags=[],
+        suggestions=[]
     )

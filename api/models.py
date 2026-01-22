@@ -16,3 +16,4 @@ class ReviewResult(BaseModel):
     quality_score: int
     comments: List[str]
     flags: List[str]
+    suggestions: List[str] = []

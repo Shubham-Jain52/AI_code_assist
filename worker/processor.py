@@ -38,7 +38,8 @@ def process_jobs():
                 "risk_score": results['risk_score'],
                 "quality_score": results['quality_score'],
                 "comments": json.dumps(results['comments']),
-                "flags": json.dumps(results['flags'])
+                "flags": json.dumps(results['flags']),
+                "suggestions": json.dumps(results.get('suggestions', []))
             })
             print(f"Job {submission_id} completed.")
 

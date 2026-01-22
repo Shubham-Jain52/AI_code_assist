@@ -8,31 +8,103 @@ class Analyzer:
         # 1. Static Analysis (Mock/Simple Wrapper)
         lint_errors = []
         if language == "python":
+            
+            # 1. AST Analysis
+            ast_risk, ast_flags, syntax_error, ast_suggestions = self._ast_check(diff)
+            suggestions = ast_suggestions
+            
+            if syntax_error:
+                return {
+                    "risk_score": 100,
+                    "quality_score": 0,
+                    "comments": [syntax_error],
+                    "flags": ["Critical: Syntax Error (Code cannot run)"],
+                    "suggestions": suggestions
+                }
+
+            # 2. Static Analysis (Flake8)
             lint_errors, tmp_path = self._run_flake8(diff)
             
-            # 2. Risk Classification
+            # 3. Risk Classification
             if tmp_path and os.path.exists(tmp_path):
                 risk_score, flags = self._assess_risk(diff, tmp_path)
                 os.remove(tmp_path) # Clean up after both checks
             else:
                  risk_score, flags = self._assess_risk(diff, None)
         else:
-            risk_score, flags = self._assess_risk(diff, None)  # Fallback for non-python
+            risk_score, flags = self._assess_risk(diff, None)
+            suggestions = []
         
-        # 3. Quality Score
+        # Combine AST and Bandit results
+        risk_score = max(risk_score, ast_risk) if language == "python" else risk_score
+        # Also need to add AST implementation for risk combining if I want full parity, 
+        # but for now ensuring suggestions is priority.
+        # Actually api/index.py adds them: risk_score += ast_risk
+        if language == "python":
+            risk_score += ast_risk
+            flags.extend(ast_flags)
+
+        # 4. Quality Score
         quality_score = max(0, 100 - (len(lint_errors) * 5) - (risk_score * 2))
         
         comments = lint_errors
         
         return {
-            "risk_score": risk_score,
+            "risk_score": min(risk_score, 100),
             "quality_score": quality_score,
             "comments": comments,
-            "flags": flags
+            "flags": flags,
+            "suggestions": suggestions
         }
 
     import sys
     
+    def _ast_check(self, code: str):
+        """Uses built-in AST to find logic errors and syntax crashes."""
+        import ast
+        risk = 0
+        flags = []
+        suggestions = []
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as e:
+            msg = f"SyntaxError: {e.msg} at line {e.lineno}"
+            
+            # Run heuristics for common syntax errors
+            if ".upper()" in code or ".lower()" in code:
+                 # Check for 5.upper() pattern
+                 import re
+                 if re.search(r'\b\d+\.(upper|lower)', code):
+                     suggestions.append("You are trying to call a method on a number literal. Use parenthesis: `(5).upper()` or quotes: `'5'.upper()`.")
+            
+            return 100, [], msg, suggestions
+        except Exception as e:
+            return 100, [], f"Parse Error: {str(e)}", []
+
+        for node in ast.walk(tree):
+            # Division by Zero
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                if isinstance(node.right, ast.Constant) and node.right.value == 0:
+                    risk += 50
+                    flags.append("Logic: Division by Zero detected")
+                    suggestions.append("Ensure the denominator is not zero.")
+            
+            # Infinite Loop patterns (heuristic)
+            if isinstance(node, ast.While):
+                if isinstance(node.test, ast.Constant) and node.test.value == True:
+                    # Check if break exists
+                    has_break = False
+                    for child in ast.walk(node):
+                        if isinstance(child, ast.Break):
+                            has_break = True
+                            break
+                    if not has_break:
+                        risk += 30
+                        flags.append("Logic: Potential infinite loop (while True without break)")
+                        suggestions.append("Add a `break` statement inside the loop or use a condition variable.")
+
+        return risk, flags, None, suggestions
+
     def _run_flake8(self, code: str) -> tuple:
         # Create a temp file to run flake8 on
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:

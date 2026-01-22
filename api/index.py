@@ -204,7 +204,8 @@ async def submit_review(request: Request):
             "risk_score": results['risk_score'],
             "quality_score": results['quality_score'],
             "comments": results['comments'],
-            "flags": results['flags']
+            "flags": results['flags'],
+            "suggestions": results.get('suggestions', [])
         }
 
     except Exception as e:
