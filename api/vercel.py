@@ -1,159 +1,121 @@
 
-from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 import os
 import sys
-import uuid
-import json
+import traceback
 
-app = FastAPI(title="AI Code Review Assistant (Vercel)")
-
-# Mount static files
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-# --- Inlined Analyzer (to avoid path/import issues on Vercel) ---
-import subprocess
-import tempfile
-
-class VercelAnalyzer:
-    def analyze(self, diff: str, language: str = "python"):
-        # 1. Static Analysis
-        lint_errors = []
-        if language == "python":
-            lint_errors, tmp_path = self._run_flake8(diff)
-            
-            # 2. Risk Classification
-            if tmp_path and os.path.exists(tmp_path):
-                risk_score, flags = self._assess_risk(diff, tmp_path)
-                try:
-                    os.remove(tmp_path) 
-                except: 
-                    pass
-            else:
-                 risk_score, flags = self._assess_risk(diff, None)
-        else:
-            risk_score, flags = self._assess_risk(diff, None)
-        
-        # 3. Quality Score
-        quality_score = max(0, 100 - (len(lint_errors) * 5) - (risk_score * 2))
-        
-        return {
-            "risk_score": risk_score,
-            "quality_score": quality_score,
-            "comments": lint_errors,
-            "flags": flags
-        }
-
-    def _run_flake8(self, code: str) -> tuple:
-        # Create a temp file to run flake8 on
-        # Use simple name in /tmp explicitly if needed, but NamedTemporaryFile defaults to secure temp
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
-            tmp.write(code)
-            tmp_path = tmp.name
-            
-        try:
-            # Run flake8 using python -m
-            result = subprocess.run(
-                [sys.executable, '-m', 'flake8', tmp_path, '--format=default'], 
-                capture_output=True, 
-                text=True
-            )
-            
-            errors = []
-            if result.stdout:
-                for line in result.stdout.splitlines():
-                    parts = line.split(':', 3)
-                    if len(parts) >= 4:
-                        errors.append(parts[3].strip())
-            return errors, tmp_path
-        except Exception as e:
-            if os.path.exists(tmp_path):
-                try: os.remove(tmp_path)
-                except: pass
-            # Log error but don't crash
-            return [f"Lint Error (System): {str(e)}"], None
-
-    def _run_bandit(self, file_path: str) -> tuple:
-        try:
-            result = subprocess.run(
-                [sys.executable, '-m', 'bandit', '-f', 'json', '-ll', file_path],
-                capture_output=True,
-                text=True
-            )
-            
-            # Reset pointer or check output
-            output_str = result.stdout
-            if not output_str.strip():
-                 # fallback if stdout empty, check stderr
-                 if result.stderr:
-                     return 0, [f"Security Scan Error: {result.stderr}"]
-                 return 0, []
-
-            output = json.loads(output_str)
-            issues = []
-            score_impact = 0
-            
-            results = output.get('results', [])
-            for issue in results:
-                severity = issue['issue_severity']
-                msg = f"Security ({severity}): {issue['issue_text']}"
-                issues.append(msg)
-                
-                if severity == 'HIGH':
-                    score_impact += 30
-                elif severity == 'MEDIUM':
-                    score_impact += 15
-                    
-            return score_impact, issues
-            
-        except Exception as e:
-            return 0, [f"Security analysis failed: {str(e)}"]
-
-    def _assess_risk(self, diff: str, tmp_path: str) -> tuple:
-        risk_score = 0
-        flags = []
-        
-        # 1. Run Bandit (Security)
-        if tmp_path:
-            bandit_score, bandit_flags = self._run_bandit(tmp_path)
-            risk_score += bandit_score
-            flags.extend(bandit_flags)
-        
-        # 2. Heuristics (Fallback)
-        if "eval(" in diff or "exec(" in diff:
-            if not any("eval" in f for f in flags):
-                risk_score += 50
-                flags.append("Security: Manual detection of eval/exec")
-            
-        if "password" in diff.lower() or "secret" in diff.lower():
-             if not any("hardcoded" in f.lower() for f in flags):
-                risk_score += 30
-                flags.append("Security: Potential sensitive data hardcoded")
-            
-        if len(diff.splitlines()) > 100:
-            risk_score += 10
-            flags.append("Maintainability: Large change set (>100 lines)")
-            
-        return min(risk_score, 100), flags
-
-analyzer = VercelAnalyzer()
-
-class ReviewRequest(BaseModel):
-    diff: str
-    language: str = "python"
-
-@app.get("/")
-async def read_index():
-    return FileResponse(os.path.join(static_dir, 'index.html'))
+app = FastAPI()
 
 @app.post("/review")
-async def submit_review(request: ReviewRequest):
-    # Synchronous processing for Serverless/Vercel
+async def submit_review(request: Request):
     try:
-        results = analyzer.analyze(request.diff, request.language)
+        # Lazy import everything to catch ImportErrors
+        import json
+        import uuid
+        import subprocess
+        import tempfile
+        from pydantic import BaseModel
+
+        # Parse body manually to avoid Pydantic validation errors causing 422s (which might look like errors)
+        try:
+            body = await request.json()
+            diff = body.get("diff", "")
+            language = body.get("language", "python")
+        except Exception:
+            diff = ""
+            language = "python"
+
+        # --- Define Analyzer Logic Locally ---
+        class VercelAnalyzer:
+            def analyze(self, diff: str, language: str = "python"):
+                lint_errors = []
+                flags = []
+                risk_score = 0
+                
+                if language == "python":
+                    lint_errors, tmp_path = self._run_flake8(diff)
+                    if tmp_path and os.path.exists(tmp_path):
+                        risk_score, flags = self._assess_risk(diff, tmp_path)
+                        try: os.remove(tmp_path) 
+                        except: pass
+                    else:
+                        risk_score, flags = self._assess_risk(diff, None)
+                else:
+                    risk_score, flags = self._assess_risk(diff, None)
+                
+                quality_score = max(0, 100 - (len(lint_errors) * 5) - (risk_score * 2))
+                return {
+                    "risk_score": risk_score,
+                    "quality_score": quality_score,
+                    "comments": lint_errors,
+                    "flags": flags
+                }
+
+            def _run_flake8(self, code: str):
+                # Explicitly use /tmp for Vercel
+                tmp_path = os.path.join('/tmp', f'analysis_{uuid.uuid4().hex}.py')
+                try:
+                    with open(tmp_path, 'w') as f:
+                        f.write(code)
+                    
+                    # Run flake8
+                    cmd = [sys.executable, '-m', 'flake8', tmp_path, '--format=default']
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    errors = []
+                    if result.stdout:
+                        for line in result.stdout.splitlines():
+                            parts = line.split(':', 3)
+                            if len(parts) >= 4:
+                                errors.append(parts[3].strip())
+                    return errors, tmp_path
+                except Exception as e:
+                    return [f"Lint Error: {str(e)}"], tmp_path
+
+            def _run_bandit(self, file_path: str):
+                try:
+                    cmd = [sys.executable, '-m', 'bandit', '-f', 'json', '-ll', file_path]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if not result.stdout.strip():
+                        if result.stderr: return 0, [f"Bandit Error: {result.stderr}"]
+                        return 0, []
+
+                    output = json.loads(result.stdout)
+                    issues = []
+                    score = 0
+                    for issue in output.get('results', []):
+                        severity = issue['issue_severity']
+                        issues.append(f"Security ({severity}): {issue['issue_text']}")
+                        score += 30 if severity == 'HIGH' else 15
+                    return score, issues
+                except Exception as e:
+                    return 0, [f"Bandit Failed: {str(e)}"]
+
+            def _assess_risk(self, diff: str, tmp_path: str):
+                risk = 0
+                flags = []
+                if tmp_path:
+                    b_score, b_flags = self._run_bandit(tmp_path)
+                    risk += b_score
+                    flags.extend(b_flags)
+                
+                if "eval(" in diff or "exec(" in diff:
+                    if not any("eval" in f for f in flags):
+                        risk += 50
+                        flags.append("Security: Use of eval/exec detected")
+                
+                if "password" in diff.lower():
+                     if not any("hardcoded" in f.lower() for f in flags):
+                        risk += 30
+                        flags.append("Security: Potential hardcoded password")
+                        
+                return min(risk, 100), flags
+
+        # Execute
+        analyzer = VercelAnalyzer()
+        results = analyzer.analyze(diff, language)
         
         return {
             "submission_id": str(uuid.uuid4()),
@@ -163,17 +125,25 @@ async def submit_review(request: ReviewRequest):
             "comments": results['comments'],
             "flags": results['flags']
         }
+
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        print(error_details)  # Log to Vercel console
-        
-        # Return error as special failed result so frontend can display it
-        return {
+        # Catch-all: Return 200 with error details to display in Frontend
+        return JSONResponse(content={
             "submission_id": "error",
             "status": "failed",
             "risk_score": 0,
             "quality_score": 0,
             "comments": [],
-            "flags": [f"System Error: {str(e)}"] 
-        }
+            "flags": [f"System Error: {str(e)}", traceback.format_exc()]
+        }, status_code=200)
+
+# Serve static files for frontend
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/")
+async def read_index():
+    return FileResponse(os.path.join(static_dir, 'index.html'))
