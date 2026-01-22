@@ -98,13 +98,12 @@ async def submit_review(request: Request):
                 except SyntaxError as e:
                     msg = f"SyntaxError: {e.msg} at line {e.lineno}"
                     
-                    # Heuristic suggestions for common syntax errors
-                    if "invalid syntax" in e.msg:
-                        if ".upper()" in code or ".lower()" in code:
-                             # Check for 5.upper() pattern
-                             import re
-                             if re.search(r'\b\d+\.(upper|lower)', code):
-                                 suggestions.append("You are trying to call a method on a number literal. Use parenthesis: `(5).upper()` or quotes: `'5'.upper()`.")
+                    # Run heuristics for common syntax errors
+                    if ".upper()" in code or ".lower()" in code:
+                         # Check for 5.upper() pattern
+                         import re
+                         if re.search(r'\b\d+\.(upper|lower)', code):
+                             suggestions.append("You are trying to call a method on a number literal. Use parenthesis: `(5).upper()` or quotes: `'5'.upper()`.")
                     
                     return 100, [], msg, suggestions
                 except Exception as e:
