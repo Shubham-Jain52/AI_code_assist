@@ -33,24 +33,87 @@ async def submit_review(request: Request):
                 flags = []
                 risk_score = 0
                 
+                # 1. AST Analysis (Python generic checks)
                 if language == "python":
+                    ast_risk, ast_flags, syntax_error = self._ast_check(diff)
+                    if syntax_error:
+                        return {
+                            "risk_score": 100,
+                            "quality_score": 0,
+                            "comments": [syntax_error],
+                            "flags": ["Critical: Syntax Error (Code cannot run)"]
+                        }
+                    
+                    risk_score += ast_risk
+                    flags.extend(ast_flags)
+
+                    # 2. Static Analysis (Flake8)
                     lint_errors, tmp_path = self._run_flake8(diff)
+                    
+                    # Check for F821 (Undefined Name) - Critical
+                    undefined_vars = [e for e in lint_errors if "F821" in e]
+                    if undefined_vars:
+                        risk_score += 20 * len(undefined_vars)
+                        flags.append(f"Critical: {len(undefined_vars)} Undefined variables detected")
+
+                    # 3. Security (Bandit)
                     if tmp_path and os.path.exists(tmp_path):
-                        risk_score, flags = self._assess_risk(diff, tmp_path)
+                        bandit_score, bandit_flags = self._assess_risk(diff, tmp_path)
+                        risk_score += bandit_score
+                        flags.extend(bandit_flags)
                         try: os.remove(tmp_path) 
                         except: pass
                     else:
-                        risk_score, flags = self._assess_risk(diff, None)
+                        pass
                 else:
                     risk_score, flags = self._assess_risk(diff, None)
                 
-                quality_score = max(0, 100 - (len(lint_errors) * 5) - (risk_score * 2))
+                # Cap risk at 100
+                risk_score = min(risk_score, 100)
+                
+                # Quality Score reversed
+                quality_score = max(0, 100 - risk_score - (len(lint_errors) * 2))
+                
                 return {
                     "risk_score": risk_score,
                     "quality_score": quality_score,
                     "comments": lint_errors,
                     "flags": flags
                 }
+
+            def _ast_check(self, code: str):
+                """Uses built-in AST to find logic errors and syntax crashes."""
+                import ast
+                risk = 0
+                flags = []
+                try:
+                    tree = ast.parse(code)
+                except SyntaxError as e:
+                    return 100, [], f"SyntaxError: {e.msg} at line {e.lineno}"
+                except Exception as e:
+                    return 100, [], f"Parse Error: {str(e)}"
+
+                for node in ast.walk(tree):
+                    # Division by Zero
+                    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                        if isinstance(node.right, ast.Constant) and node.right.value == 0:
+                            risk += 50
+                            flags.append("Logic: Division by Zero detected")
+                    
+                    # Infinite Loop patterns (heuristic)
+                    if isinstance(node, ast.While):
+                        if isinstance(node.test, ast.Constant) and node.test.value == True:
+                            # Check if break exists
+                            has_break = False
+                            for child in ast.walk(node):
+                                if isinstance(child, ast.Break):
+                                    has_break = True
+                                    break
+                            if not has_break:
+                                risk += 30
+                                flags.append("Logic: Potential infinite loop (while True without break)")
+
+                return risk, flags, None
 
             def _run_flake8(self, code: str):
                 # Explicitly use /tmp for Vercel
