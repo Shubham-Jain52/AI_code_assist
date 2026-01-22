@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code Review Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f1117;
+            --bg-card: #1e212b;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --accent: #6366f1;
+            --accent-hover: #4f46e5;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --border: #2d3748;
+            --glass-bg: rgba(30, 33, 43, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .background-glob {
+            position: fixed;
+            top: -20%;
+            left: -10%;
+            width: 60%;
+            height: 60%;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(15, 17, 23, 0) 70%);
+            z-index: -1;
+            filter: blur(80px);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1400px;
+            padding: 2rem;
+            height: 95vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            flex: 1;
+            min-height: 0;
+            /* Fix flex scrolling */
+        }
+
+        .card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .badge {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--accent);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .editor-container {
+            flex: 1;
+            background: #111;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            display: flex;
+        }
+
+        textarea {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            border: none;
+            color: #e2e8f0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            padding: 1rem;
+            resize: none;
+            outline: none;
+            line-height: 1.5;
+        }
+
+        .actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn.primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn.primary:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn.secondary {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        .btn.secondary:hover {
+            border-color: var(--text-primary);
+            color: var(--text-primary);
+        }
+
+        /* Results Styles */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .icon-placeholder {
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .results-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            overflow-y: auto;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .metric-box {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+
+        .metric-box .label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .value-container {
+            margin-bottom: 0.5rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: white;
+        }
+
+        .max {
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: var(--border);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .progress-bar .fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent);
+            transition: width 1s ease-out;
+        }
+
+        /* Use JS to change color based on score */
+        .metric-box.danger .fill {
+            background: var(--danger);
+        }
+
+        .metric-box.danger .value {
+            color: var(--danger);
+        }
+
+        .metric-box.success .fill {
+            background: var(--success);
+        }
+
+        .metric-box.success .value {
+            color: var(--success);
+        }
+
+        .issues-list h3 {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        ul#flagsList {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .issue-item {
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 3px solid var(--accent);
+            padding: 0.75rem 1rem;
+            border-radius: 0 8px 8px 0;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .issue-item.security {
+            border-color: var(--danger);
+        }
+
+        .issue-item.quality {
+            border-color: var(--warning);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Spinner */
+        .loader-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .container {
+                height: auto;
+                padding: 1rem;
+            }
+
+            .card {
+                min-height: 400px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="background-glob"></div>
+
+    <main class="container">
+        <header>
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#4F46E5" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M2 17L12 22L22 17" stroke="#4F46E5" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M2 12L12 17L22 12" stroke="#4F46E5" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+                <span>AI Code Review</span>
+            </div>
+            <p class="subtitle">Secure. Fast. Intelligent.</p>
+        </header>
+
+        <div class="grid">
+            <!-- Left Panel: Input -->
+            <section class="card input-card">
+                <div class="card-header">
+                    <h2>Code Input</h2>
+                    <span class="badge">Python</span>
+                </div>
+                <div class="editor-container">
+                    <textarea id="codeInput" placeholder="Paste your Python code here..." spellcheck="false"></textarea>
+                </div>
+                <div class="actions">
+                    <button id="analyzeBtn" class="btn primary">
+                        <span class="btn-text">Analyze Code</span>
+                        <div class="loader-spinner hidden"></div>
+                    </button>
+                    <button id="clearBtn" class="btn secondary">Clear</button>
+                </div>
+                <div id="debugLog"
+                    style="display:none; margin-top: 1rem; padding: 1rem; background: #333; color: #ff5555; font-family: monospace; border-radius: 8px; white-space: pre-wrap; font-size: 0.8rem; overflow-x: auto;">
+                </div>
+            </section>
+
+            <!-- Right Panel: Results -->
+            <section class="card results-card">
+                <div class="card-header">
+                    <h2>Analysis Results</h2>
+                    <div id="statusBadge" class="status-badge hidden">Pending</div>
+                </div>
+
+                <div id="emptyState" class="empty-state">
+                    <div class="icon-placeholder">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5">
+                            <path
+                                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+                            </path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg>
+                    </div>
+                    <p>Run analysis to see security insights and quality scores.</p>
+                </div>
+
+                <div id="resultsContent" class="results-content hidden">
+                    <div class="metrics">
+                        <div class="metric-box">
+                            <span class="label">Risk Score</span>
+                            <div class="value-container">
+                                <span id="riskScore" class="value">0</span>
+                                <span class="max">/100</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="riskBar" class="fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="metric-box">
+                            <span class="label">Quality Score</span>
+                            <div class="value-container">
+                                <span id="qualityScore" class="value">0</span>
+                                <span class="max">/100</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="qualityBar" class="fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="issues-list">
+                        <h3>Detected Issues</h3>
+                        <ul id="flagsList">
+                            <!-- Items will be injected here -->
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        const API_URL = "";
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const codeInput = document.getElementById('codeInput');
+            const spinner = analyzeBtn.querySelector('.loader-spinner');
+            const btnText = analyzeBtn.querySelector('.btn-text');
+            const debugLog = document.getElementById('debugLog');
+
+            // Results elements
+            const emptyState = document.getElementById('emptyState');
+            const resultsContent = document.getElementById('resultsContent');
+            const riskScoreEl = document.getElementById('riskScore');
+            const qualityScoreEl = document.getElementById('qualityScore');
+            const riskBar = document.getElementById('riskBar');
+            const qualityBar = document.getElementById('qualityBar');
+            const flagsList = document.getElementById('flagsList');
+            const statusBadge = document.getElementById('statusBadge');
+
+            function logError(msg) {
+                debugLog.style.display = 'block';
+                debugLog.textContent += msg + "\n";
+                console.error(msg);
+            }
+
+            analyzeBtn.addEventListener('click', async () => {
+                const code = codeInput.value.trim();
+                if (!code) {
+                    alert("Please enter some code to analyze.");
+                    return;
+                }
+
+                // UI Loading State
+                setLoading(true);
+                resetResults();
+                debugLog.style.display = 'none';
+                debugLog.textContent = '';
+
+                try {
+                    // 1. Submit Review
+                    logError("Sending POST to /review...");
+                    const response = await fetch('/review', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ diff: code, language: 'python' })
+                    });
+
+                    if (!response.ok) {
+                        const text = await response.text();
+                        throw new Error(`Server returned ${response.status}: ${text}`);
+                    }
+
+                    const data = await response.json();
+                    const submissionId = data.submission_id;
+                    logError(`Submitted! ID: ${submissionId}. Polling...`);
+
+                    // 2. Poll for Status
+                    await pollStatus(submissionId);
+
+                } catch (error) {
+                    logError("CATCH: " + error.message);
+                    setLoading(false);
+                }
+            });
+
+            clearBtn.addEventListener('click', () => {
+                codeInput.value = '';
+                resetResults();
+                emptyState.classList.remove('hidden');
+                resultsContent.classList.add('hidden');
+                debugLog.style.display = 'none';
+            });
+
+            async function pollStatus(id) {
+                let attempts = 0;
+                const maxAttempts = 20;
+
+                const interval = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const res = await fetch(`/status/${id}`);
+                        if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
+
+                        const data = await res.json();
+
+                        // Log partial status for debugging
+                        if (attempts % 5 === 0) logError(`Polling attempt ${attempts}: ${data.status}`);
+
+                        if (data.status === 'completed') {
+                            clearInterval(interval);
+                            showResults(data);
+                            setLoading(false);
+                            logError("Done!");
+                        } else if (attempts >= maxAttempts) {
+                            clearInterval(interval);
+                            throw new Error("Polling timed out");
+                            setLoading(false);
+                        }
+                    } catch (e) {
+                        clearInterval(interval);
+                        logError("Polling error: " + e.message);
+                        setLoading(false);
+                    }
+                }, 1000);
+            }
+
+            function setLoading(isLoading) {
+                analyzeBtn.disabled = isLoading;
+                if (isLoading) {
+                    spinner.classList.remove('hidden');
+                    btnText.textContent = 'Analyzing...';
+                    statusBadge.classList.remove('hidden');
+                    statusBadge.textContent = 'Processing...';
+                    statusBadge.style.background = 'rgba(245, 158, 11, 0.2)';
+                    statusBadge.style.color = '#f59e0b';
+                } else {
+                    spinner.classList.add('hidden');
+                    btnText.textContent = 'Analyze Code';
+                    statusBadge.textContent = 'Completed';
+                    statusBadge.style.background = 'rgba(34, 197, 94, 0.2)';
+                    statusBadge.style.color = '#22c55e';
+                }
+            }
+
+            function resetResults() {
+                flagsList.innerHTML = '';
+                riskScoreEl.textContent = '0';
+                qualityScoreEl.textContent = '0';
+                riskBar.style.width = '0%';
+                qualityBar.style.width = '0%';
+            }
+
+            function showResults(data) {
+                emptyState.classList.add('hidden');
+                resultsContent.classList.remove('hidden');
+
+                // Animate Scores
+                animateValue(riskScoreEl, 0, data.risk_score, 1000);
+                animateValue(qualityScoreEl, 0, data.quality_score, 1000);
+
+                setTimeout(() => {
+                    riskBar.style.width = `${data.risk_score}%`;
+                    qualityBar.style.width = `${data.quality_score}%`;
+                }, 100);
+
+                // Color Logic
+                const riskBox = riskScoreEl.closest('.metric-box');
+                riskBox.classList.remove('danger', 'success');
+                if (data.risk_score > 50) riskBox.classList.add('danger');
+                else if (data.risk_score < 20) riskBox.classList.add('success');
+
+                // Flags
+                data.flags.forEach(flag => {
+                    const li = document.createElement('li');
+                    li.className = 'issue-item';
+
+                    if (flag.includes('Security')) li.classList.add('security');
+                    else li.classList.add('quality');
+
+                    li.textContent = flag;
+                    flagsList.appendChild(li);
+                });
+
+                if (data.flags.length === 0) {
+                    const li = document.createElement('li');
+                    li.className = 'issue-item';
+                    li.style.borderLeftColor = '#22c55e';
+                    li.textContent = "✨ Clean code! No issues detected.";
+                    flagsList.appendChild(li);
+                }
+            }
+
+            function animateValue(obj, start, end, duration) {
+                let startTimestamp = null;
+                const step = (timestamp) => {
+                    if (!startTimestamp) startTimestamp = timestamp;
+                    const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                    obj.innerHTML = Math.floor(progress * (end - start) + start);
+                    if (progress < 1) {
+                        window.requestAnimationFrame(step);
+                    }
+                };
+                window.requestAnimationFrame(step);
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+redis
+flake8
+bandit
+pydantic
+requests
+aiofiles
+pytest
+httpx
