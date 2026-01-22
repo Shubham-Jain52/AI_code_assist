@@ -517,7 +517,7 @@
                     const data = await response.json();
 
                     // Vercel/Sync Mode: Check if results are already here
-                    if (data.status === 'completed') {
+                    if (data.status === 'completed' || data.status === 'failed') {
                         showResults(data);
                         setLoading(false);
                         logError("Analysis complete (Sync).");
