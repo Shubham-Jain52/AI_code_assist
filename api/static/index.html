@@ -515,6 +515,15 @@
                     }
 
                     const data = await response.json();
+
+                    // Vercel/Sync Mode: Check if results are already here
+                    if (data.status === 'completed') {
+                        showResults(data);
+                        setLoading(false);
+                        logError("Analysis complete (Sync).");
+                        return;
+                    }
+
                     const submissionId = data.submission_id;
                     logError(`Submitted! ID: ${submissionId}. Polling...`);
 
