@@ -31,17 +31,21 @@ async def submit_review(request: Request):
             def analyze(self, diff: str, language: str = "python"):
                 lint_errors = []
                 flags = []
+                suggestions = []
                 risk_score = 0
                 
                 # 1. AST Analysis (Python generic checks)
                 if language == "python":
-                    ast_risk, ast_flags, syntax_error = self._ast_check(diff)
+                    ast_risk, ast_flags, syntax_error, ast_suggestions = self._ast_check(diff)
+                    suggestions.extend(ast_suggestions)
+                    
                     if syntax_error:
                         return {
                             "risk_score": 100,
                             "quality_score": 0,
                             "comments": [syntax_error],
-                            "flags": ["Critical: Syntax Error (Code cannot run)"]
+                            "flags": ["Critical: Syntax Error (Code cannot run)"],
+                            "suggestions": suggestions
                         }
                     
                     risk_score += ast_risk
@@ -55,6 +59,7 @@ async def submit_review(request: Request):
                     if undefined_vars:
                         risk_score += 20 * len(undefined_vars)
                         flags.append(f"Critical: {len(undefined_vars)} Undefined variables detected")
+                        suggestions.append("Define variables before using them, or check for typos.")
 
                     # 3. Security (Bandit)
                     if tmp_path and os.path.exists(tmp_path):
@@ -78,7 +83,8 @@ async def submit_review(request: Request):
                     "risk_score": risk_score,
                     "quality_score": quality_score,
                     "comments": lint_errors,
-                    "flags": flags
+                    "flags": flags,
+                    "suggestions": suggestions
                 }
 
             def _ast_check(self, code: str):
@@ -86,12 +92,23 @@ async def submit_review(request: Request):
                 import ast
                 risk = 0
                 flags = []
+                suggestions = []
                 try:
                     tree = ast.parse(code)
                 except SyntaxError as e:
-                    return 100, [], f"SyntaxError: {e.msg} at line {e.lineno}"
+                    msg = f"SyntaxError: {e.msg} at line {e.lineno}"
+                    
+                    # Heuristic suggestions for common syntax errors
+                    if "invalid syntax" in e.msg:
+                        if ".upper()" in code or ".lower()" in code:
+                             # Check for 5.upper() pattern
+                             import re
+                             if re.search(r'\b\d+\.(upper|lower)', code):
+                                 suggestions.append("You are trying to call a method on a number literal. Use parenthesis: `(5).upper()` or quotes: `'5'.upper()`.")
+                    
+                    return 100, [], msg, suggestions
                 except Exception as e:
-                    return 100, [], f"Parse Error: {str(e)}"
+                    return 100, [], f"Parse Error: {str(e)}", []
 
                 for node in ast.walk(tree):
                     # Division by Zero
@@ -99,6 +116,7 @@ async def submit_review(request: Request):
                         if isinstance(node.right, ast.Constant) and node.right.value == 0:
                             risk += 50
                             flags.append("Logic: Division by Zero detected")
+                            suggestions.append("Ensure the denominator is not zero.")
                     
                     # Infinite Loop patterns (heuristic)
                     if isinstance(node, ast.While):
@@ -112,8 +130,9 @@ async def submit_review(request: Request):
                             if not has_break:
                                 risk += 30
                                 flags.append("Logic: Potential infinite loop (while True without break)")
+                                suggestions.append("Add a `break` statement inside the loop or use a condition variable.")
 
-                return risk, flags, None
+                return risk, flags, None, suggestions
 
             def _run_flake8(self, code: str):
                 # Explicitly use /tmp for Vercel
@@ -197,7 +216,8 @@ async def submit_review(request: Request):
             "risk_score": 0,
             "quality_score": 0,
             "comments": [],
-            "flags": [f"System Error: {str(e)}", traceback.format_exc()]
+            "flags": [f"System Error: {str(e)}", traceback.format_exc()],
+            "suggestions": ["Check the server logs for more details."]
         }, status_code=200)
 
 # Serve static files for frontend
