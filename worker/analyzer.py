@@ -31,6 +31,8 @@ class Analyzer:
             "flags": flags
         }
 
+    import sys
+    
     def _run_flake8(self, code: str) -> tuple:
         # Create a temp file to run flake8 on
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmp:
@@ -38,9 +40,9 @@ class Analyzer:
             tmp_path = tmp.name
             
         try:
-            # Run flake8
+            # Run flake8 using python -m to avoid PATH issues
             result = subprocess.run(
-                ['flake8', tmp_path, '--format=default'], 
+                [sys.executable, '-m', 'flake8', tmp_path, '--format=default'], 
                 capture_output=True, 
                 text=True
             )
@@ -65,7 +67,7 @@ class Analyzer:
             # -ll: report only medium and high severity
             # -f json: output in json format
             result = subprocess.run(
-                ['bandit', '-f', 'json', '-ll', file_path],
+                [sys.executable, '-m', 'bandit', '-f', 'json', '-ll', file_path],
                 capture_output=True,
                 text=True
             )

@@ -44,4 +44,16 @@ async def submit_review(request: ReviewRequest):
             "flags": results['flags']
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_details = traceback.format_exc()
+        print(error_details)  # Log to Vercel console
+        
+        # Return error as special failed result so frontend can display it
+        return {
+            "submission_id": "error",
+            "status": "failed",
+            "risk_score": 0,
+            "quality_score": 0,
+            "comments": [],
+            "flags": [f"System Error: {str(e)}"] 
+        }
